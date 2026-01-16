@@ -1,139 +1,89 @@
-#include <iostream>
-#include <vector>
-#include <tuple>
-#include <string>
-#include <sstream>
-#include <set>
-#include <algorithm>
-#include <functional>
-#include <fstream>
+from argparse import ArgumentParser
+from pathlib import Path
+from typing import List, Tuple
 
-using namespace std;
-
-using Matrix = vector<vector<bool>>;
-using Result = tuple<Matrix, Matrix, Matrix, Matrix, Matrix>;
-
-Result main_func(const string& s, const string& e) {
-    vector<pair<int, int>> edges;
-    stringstream ss(s);
-    string line;
-    while (getline(ss, line, '\n')) {
-        if (line.empty()) continue;
-        replace(line.begin(), line.end(), ',', ' ');
-        stringstream ls(line);
-        int a, b;
-        ls >> a >> b;
-        edges.emplace_back(a, b);
-    }
-
-    set<int> vertices;
-    for (const auto& [a, b] : edges) {
-        vertices.insert(a);
-        vertices.insert(b);
-    }
-
-    int n = *max_element(vertices.begin(), vertices.end());
-    vector<vector<int>> g(n + 1);
-    for (const auto& [a, b] : edges)
-        g[a].push_back(b);
-
-    vector<int> depth(n + 1, -1);
-    vector<int> parent(n + 1, -1);
-    int root = stoi(e);
-
-    function<void(int, int, int)> dfs = [&](int v, int p, int d) {
-        depth[v] = d;
-        parent[v] = p;
-        for (int to : g[v])
-            dfs(to, v, d + 1);
-        };
-    dfs(root, -1, 0);
-
-    Matrix r1(n, vector<bool>(n, false));
-    Matrix r2(n, vector<bool>(n, false));
-    Matrix r3(n, vector<bool>(n, false));
-    Matrix r4(n, vector<bool>(n, false));
-    Matrix r5(n, vector<bool>(n, false));
-
-    for (const auto& [a, b] : edges)
-        r1[a - 1][b - 1] = true;
-
-    for (const auto& [a, b] : edges)
-        r2[b - 1][a - 1] = true;
-
-    vector<vector<bool>> ancestor(n, vector<bool>(n, false));
-    function<void(int, int)> mark = [&](int v, int anc) {
-        for (int to : g[v]) {
-            ancestor[anc - 1][to - 1] = true;
-            mark(to, anc);
-        }
-        };
-    for (int v : vertices)
-        mark(v, v);
-
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j)
-            if (ancestor[i][j] && !r1[i][j])
-                r3[i][j] = true;
-
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j)
-            if (r3[j][i])
-                r4[i][j] = true;
-
-    for (int i : vertices)
-        for (int j : vertices)
-            if (i != j && depth[i] == depth[j] && depth[i] != -1)
-                r5[i - 1][j - 1] = true;
-
-    return { r1, r2, r3, r4, r5 };
-}
+import numpy as np
 
 
-int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        cerr << "Usage: ./task1 <csv_string_or_filename>\n";
-        return 1;
-    }
+def main(s: str, e: str) -> Tuple[
+    List[List[bool]],
+    List[List[bool]],
+    List[List[bool]],
+    List[List[bool]],
+    List[List[bool]]
+]:
+    path = Path(s)
+    if path.exists() and path.is_file():
+        with open(path, "r") as f:
+            data = f.read().strip()
+    else:
+        data = s.strip()
 
-    string arg = argv[1];
-    string csv_data;
-    string root = "1";
+    edges = []
+    nodes = set()
+    for line in data.split("\\n"):
+        u, v = line.strip().split(",")
+        edges.append((u, v))
+        nodes.update([u, v])
 
-    ifstream fin(arg);
-    if (fin.good()) {
-        stringstream buffer;
-        buffer << fin.rdbuf();
-        csv_data = buffer.str();
-        fin.close();
-    }
-    else {
-        csv_data = arg;
-        size_t pos = 0;
-        while ((pos = csv_data.find("\\n", pos)) != string::npos) {
-            csv_data.replace(pos, 2, "\n");
-            pos += 1;
-        }
-        replace(csv_data.begin(), csv_data.end(), ';', '\n');
-    }
+    nodes.add(e)
 
-    auto [r1, r2, r3, r4, r5] = main_func(csv_data, root);
+    nodes_list = sorted(nodes)
+    node_to_idx = {node: idx for idx, node in enumerate(nodes_list)}
+    n = len(nodes_list)
 
-    auto print = [](const Matrix& m, const string& name) {
-        cout << name << ":\n";
-        for (const auto& row : m) {
-            for (bool v : row)
-                cout << (v ? "1 " : "0 ");
-            cout << '\n';
-        }
-        cout << '\n';
-        };
+    r1 = np.zeros((n, n), dtype=bool)
+    r2 = np.zeros((n, n), dtype=bool)
+    r3 = np.zeros((n, n), dtype=bool)
+    r4 = np.zeros((n, n), dtype=bool)
+    r5 = np.zeros((n, n), dtype=bool)
 
-    print(r1, "r1 (relation of direct control)");
-    print(r2, "r2 (relation of direct subordination)");
-    print(r3, "r3 (relation of indirect control)");
-    print(r4, "r4 (relation of indirect subordination)");
-    print(r5, "r5 (relation of subordination at the same level)");
+    for u, v in edges:
+        i, j = node_to_idx[u], node_to_idx[v]
+        r1[i, j] = True
+        r2[j, i] = True
 
-    return 0;
-}
+    closure = r1.copy()
+    for k in range(n):
+        for i in range(n):
+            for j in range(n):
+                closure[i, j] = closure[i, j] or (closure[i, k] and closure[k, j])
+    r3 = closure
+
+    r4 = r3.T
+
+    from collections import defaultdict
+    parent_children = defaultdict(list)
+    for u, v in edges:
+        parent_children[u].append(v)
+
+    for parent, children in parent_children.items():
+        if len(children) > 1:
+            indices = [node_to_idx[child] for child in children]
+            for i in indices:
+                for j in indices:
+                    if i != j:
+                        r5[i, j] = True
+
+    return (
+        r1.tolist(),
+        r2.tolist(),
+        r3.tolist(),
+        r4.tolist(),
+        r5.tolist()
+    )
+
+
+if __name__ == "__main__":
+    parser = ArgumentParser(description="Process tree relations")
+    parser.add_argument("s", type=str, help="CSV string or path to CSV file")
+    parser.add_argument("e", type=str, help="Root node identifier")
+    args = parser.parse_args()
+
+    result = main(args.s, args.e)
+    relations = ["r1", "r2", "r3", "r4", "r5"]
+    for rel, matrix in zip(relations, result):
+        print(f"{rel}:")
+        for row in matrix:
+            print([int(x) for x in row])
+        print()
