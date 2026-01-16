@@ -1,167 +1,100 @@
-﻿#include <vector>
-#include <string>
-#include <sstream>
-#include <cmath>
-#include <tuple>
-#include <algorithm>
-#include <map>
-#include <set>
-#include <fstream>
-#include <iostream>
+from argparse import ArgumentParser
+from collections import deque
+from pathlib import Path
+import math
+from typing import Tuple
 
-using namespace std;
 
-vector<pair<int, int>> readCSV(const string& filepath) {
-    vector<pair<int, int>> edges;
-    ifstream file(filepath);
-    string line;
+def main(s: str, e: str) -> Tuple[float, float]:
+    path = Path(s)
+    if path.exists() and path.is_file():
+        with open(path, "r") as f:
+            data = f.read().strip()
+    else:
+        data = s.strip()
 
-    if (!file.is_open()) {
-        cerr << "File opening error: " << filepath << endl;
-        return edges;
-    }
+    edges = []
+    nodes = set()
+    lines = data.replace('\\n', '\n').split('\n')
+    for line in lines:
+        if line.strip():
+            u, v = line.strip().split(",")
+            edges.append((u.strip(), v.strip()))
+            nodes.update([u.strip(), v.strip()])
 
-    while (getline(file, line)) {
-        if (line.empty()) continue;
-        size_t pos = line.find(',');
-        if (pos != string::npos) {
-            int from = stoi(line.substr(0, pos));
-            int to = stoi(line.substr(pos + 1));
-            edges.push_back({ from, to });
-        }
-    }
+    nodes.add(e.strip())
+    nodes_list = sorted(nodes)
+    node_to_idx = {node: idx for idx, node in enumerate(nodes_list)}
+    n = len(nodes_list)
 
-    file.close();
-    return edges;
-}
+    adjacency = [[0] * n for _ in range(n)]
+    for u, v in edges:
+        i, j = node_to_idx[u], node_to_idx[v]
+        adjacency[i][j] = 1
 
-tuple<float, float> task(const string& filepath, const string& e) {
-    vector<pair<int, int>> edges = readCSV(filepath);
-    int root = stoi(e);
+    reachability = [[0] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(n):
+            reachability[i][j] = adjacency[i][j]
+        reachability[i][i] = 1
 
-    set<int> nodes_set;
-    for (const auto& edge : edges) {
-        nodes_set.insert(edge.first);
-        nodes_set.insert(edge.second);
-    }
+    for k in range(n):
+        for i in range(n):
+            for j in range(n):
+                if not reachability[i][j]:
+                    reachability[i][j] = reachability[i][k] and reachability[k][j]
 
-    vector<int> nodes(nodes_set.begin(), nodes_set.end());
-    int n = nodes.size();
+    reachable_counts = [sum(row) for row in reachability]
+    total_reachable = sum(reachable_counts)
 
-    map<int, int> node_to_index;
-    for (int i = 0; i < n; i++) {
-        node_to_index[nodes[i]] = i;
-    }
+    if total_reachable > 0:
+        p_reach = [count / total_reachable for count in reachable_counts]
+        entropy = 0.0
+        for p in p_reach:
+            if p > 0:
+                entropy -= p * math.log2(p)
+    else:
+        entropy = 0.0
 
-    vector<vector<bool>> adj(n, vector<bool>(n, false));
-    for (const auto& edge : edges) {
-        int from_idx = node_to_index[edge.first];
-        int to_idx = node_to_index[edge.second];
-        adj[from_idx][to_idx] = true;
-    }
+    root_idx = node_to_idx[e]
+    visited = [False] * n
+    depth = [0] * n
+    children_count = [0] * n
 
-    vector<vector<bool>> r1 = adj;
+    queue = deque([root_idx])
+    visited[root_idx] = True
 
-    vector<vector<bool>> r2(n, vector<bool>(n, false));
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            r2[i][j] = adj[j][i];
-        }
-    }
+    while queue:
+        current = queue.popleft()
+        for neighbor in range(n):
+            if adjacency[current][neighbor] == 1 and not visited[neighbor]:
+                visited[neighbor] = True
+                depth[neighbor] = depth[current] + 1
+                children_count[current] += 1
+                queue.append(neighbor)
 
-    vector<vector<bool>> r3(n, vector<bool>(n, false));
-    vector<vector<bool>> reachable = adj;
-    for (int k = 0; k < n; k++) {
-        for (int i = 0; i < n; i++) {
-            for (int j = 0; j < n; j++) {
-                if (reachable[i][k] && reachable[k][j]) {
-                    reachable[i][j] = true;
-                }
-            }
-        }
-    }
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            r3[i][j] = reachable[i][j] && !adj[i][j] && (i != j);
-        }
-    }
+    max_depth = max(depth) if depth else 0
+    avg_children = sum(children_count) / n if n > 0 else 0
 
-    vector<vector<bool>> r4(n, vector<bool>(n, false));
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            r4[i][j] = r3[j][i];
-        }
-    }
+    max_entropy = math.log2(n) if n > 0 else 1
+    norm_entropy = entropy / max_entropy if max_entropy > 0 else 0
+    norm_depth = max_depth / (n - 1) if n > 1 else 0
+    norm_branching = avg_children / (n - 1) if n > 1 else 0
 
-    vector<vector<bool>> r5(n, vector<bool>(n, false));
+    structural_complexity = 0.5 * norm_entropy + 0.3 * norm_depth + 0.2 * norm_branching
+    norm_complexity = structural_complexity * 10
 
-    map<int, int> level;
-    level[root] = 0;
-    bool changed = true;
-    while (changed) {
-        changed = false;
-        for (const auto& edge : edges) {
-            if (level.count(edge.first) && !level.count(edge.second)) {
-                level[edge.second] = level[edge.first] + 1;
-                changed = true;
-            }
-        }
-    }
+    entropy_rounded = round(entropy, 1)
+    complexity_rounded = round(norm_complexity, 1)
 
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            if (i != j && level[nodes[i]] == level[nodes[j]]) {
-                r5[i][j] = true;
-            }
-        }
-    }
+    return (entropy_rounded, complexity_rounded)
 
-    vector<vector<int>> l(n, vector<int>(5, 0));
 
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            if (r1[i][j]) l[i][0]++;
-            if (r2[i][j]) l[i][1]++;
-            if (r3[i][j]) l[i][2]++;
-            if (r4[i][j]) l[i][3]++;
-            if (r5[i][j]) l[i][4]++;
-        }
-    }
+if __name__ == "__main__":
+    parser = ArgumentParser(description="Calculate graph entropy and structural complexity")
+    parser.add_argument("s", type=str, help="CSV string or path to CSV file")
+    parser.add_argument("e", type=str, help="Root node identifier")
+    args = parser.parse_args()
 
-    double total_entropy = 0.0;
-    int max_possible_connections = n - 1;
-
-    for (int i = 0; i < n; i++) {
-        for (int rel = 0; rel < 5; rel++) {
-            if (l[i][rel] > 0) {
-                double probability = static_cast<double>(l[i][rel]) / max_possible_connections;
-                double entropy = -probability * log2(probability);
-                total_entropy += entropy;
-            }
-        }
-    }
-
-    double c = 1.0 / (exp(1) * log(2));
-    double reference_entropy = c * n * 5;
-    double normalized_complexity = total_entropy / reference_entropy;
-
-    total_entropy = round(total_entropy * 10) / 10;
-    normalized_complexity = round(normalized_complexity * 10) / 10;
-
-    return make_tuple(static_cast<float>(total_entropy), static_cast<float>(normalized_complexity));
-}
-
-int main(int argc, char* argv[]) {
-    if (argc != 3) {
-        cout << "Usage " << argv[0] << " <path_csv_file> <root_node>" << endl;
-        return 1;
-    }
-
-    string filepath = argv[1];
-    string root = argv[2];
-
-    auto result = task(filepath, root);
-    cout << "Entropy: " << get<0>(result) << ", Normalized complexity: " << get<1>(result) << endl;
-
-    return 0;
-}
+    entropy, complexity = main(args.s, args.e)
+    print(f"({entropy}, {complexity})")
